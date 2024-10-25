@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+gspread
+oauth2client
+telebot
+babel
+pytz
+gspread-formatting
+pip install -r requirements.txt.
