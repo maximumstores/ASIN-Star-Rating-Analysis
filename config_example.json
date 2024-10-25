@@ -1,0 +1,18 @@
+{
+  "product_urls": [
+    "https://www.amazon.com/dp/B0CB6PTG47",
+    "https://www.amazon.com/dp/B0B8SP5PPG",
+    "https://www.amazon.de/dp/B0CWB6LTFX",
+    "https://www.amazon.es/dp/B0CZLK7BQ7"
+  ],
+  "update_time_hour": 8,
+  "update_time_minute": 10,
+  "timezone": "Europe/Kiev",
+  "min_acceptable_rating": 4.3,
+  "telegram_bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
+  "telegram_chat_id": "YOUR_CHAT_ID",
+  "oxylabs_username": "YOUR_OXYLABS_USERNAME",
+  "oxylabs_password": "YOUR_OXYLABS_PASSWORD",
+  "google_sheets_credentials_file": "/path/to/your/credentials.json",
+  "google_sheets_spreadsheet_id_1": "YOUR_SPREADSHEET_ID"
+}
