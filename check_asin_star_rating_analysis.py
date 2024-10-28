@@ -22,22 +22,31 @@ from babel.numbers import parse_decimal, NumberFormatError
 from collections import defaultdict
 from gspread.exceptions import APIError
 import traceback
-from babel.numbers import parse_decimal, NumberFormatError
 from babel.core import Locale
-import logging
 
-from gspread.exceptions import APIError
 # Попытка импорта CellNotFound, если доступен
 try:
     from gspread.exceptions import CellNotFound
     HAS_CELLNOTFOUND = True
 except ImportError:
     HAS_CELLNOTFOUND = False
-from gspread_formatting import CellFormat, Color
-from bs4 import BeautifulSoup
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+
+logger.addHandler(ch)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
 
 # Определение уровней звезд
 stars = {
@@ -337,6 +346,89 @@ def get_decimal_separator(locale_str):
     except Exception as e:
         logging.error(f"Не удалось определить десятичный разделитель для локали '{locale_str}': {e}")
         return '.'
+def update_and_format_1_star_reviews(sheet, today):
+    try:
+        # Получаем все записи из листа Google Sheets
+        records = sheet.get_all_records()
+        logger.info(f"Начало обработки {len(records)} записей для 1-звёздочных отзывов.")
+
+        # Получаем список дат из заголовков столбцов
+        headers = sheet.row_values(1)
+        date_columns = headers[4:]  # Предполагая, что даты начинаются с 5-го столбца (индекс 4)
+
+        # Ищем индексы столбцов с датами
+        date_indices = [headers.index(date) + 1 for date in date_columns]
+
+        for idx, record in enumerate(records, start=2):
+            parameter = record.get('Parameter', '')
+            parameter = str(parameter).strip()  # Преобразование в строку и удаление пробелов
+            logger.debug(f"Строка {idx}: Параметр = '{parameter}'")
+
+            if parameter != '1':
+                logger.debug(f"Строка {idx}: Параметр не равен '1', пропуск.")
+                continue
+
+            # Получаем текущий и предыдущий значения количества 1-звёздочных отзывов
+            current_total_1_star = None
+            previous_total_1_star = None
+
+            for col_idx in reversed(date_indices):
+                cell_value = sheet.cell(idx, col_idx).value
+                if cell_value:
+                    try:
+                        value = int(cell_value)
+                        if current_total_1_star is None:
+                            current_total_1_star = value
+                        elif previous_total_1_star is None:
+                            previous_total_1_star = value
+                            break
+                    except ValueError:
+                        logger.warning(f"Строка {idx}: Неверное числовое значение '{cell_value}' в колонке {col_idx}")
+                        continue
+
+            logger.debug(f"Строка {idx}: current_total_1_star = {current_total_1_star}, previous_total_1_star = {previous_total_1_star}")
+
+            if current_total_1_star is None or previous_total_1_star is None:
+                logger.warning(f"Строка {idx}: Недостаточно данных для сравнения.")
+                continue
+
+            # Проверяем, увеличилось ли количество 1-звёздочных отзывов
+            if current_total_1_star > previous_total_1_star:
+                logger.debug(f"Строка {idx}: Обнаружен новый 1-звёздочный отзыв.")
+                # Окрашиваем ячейку с текущей датой в красный цвет
+                col_letter = gspread.utils.rowcol_to_a1(idx, date_indices[-1])[0]
+                cell_range = f"{col_letter}{idx}"
+                apply_color(sheet, cell_range, Color(1, 0, 0))
+                logger.info(f"Строка {idx}: Применён красный цвет к ячейке {cell_range}.")
+            else:
+                logger.debug(f"Строка {idx}: Новых 1-звёздочных отзывов не обнаружено.")
+
+        logger.info("Обработка 1-звёздочных отзывов завершена.")
+    except Exception as e:
+        logger.error(f"Ошибка в функции update_and_format_1_star_reviews: {e}")
+        logger.debug(traceback.format_exc())
+
+
+
+
+
+def apply_color(sheet, cell_range, color):
+    try:
+        logger.debug(f"Применение цвета к ячейке {cell_range} с цветом {color}")
+        sheet.format(cell_range, {
+            "backgroundColor": {
+                "red": color.red,
+                "green": color.green,
+                "blue": color.blue
+            }
+        })
+        logger.debug(f"Успешно применён цвет к диапазону {cell_range}.")
+    except Exception as e:
+        logger.error(f"Ошибка при форматировании ячейки {cell_range}: {e}")
+        raise
+
+
+
 
 
 def get_geo_location_from_locale(locale_str):
@@ -491,7 +583,6 @@ def clean_amazon_url(url):
     return cleaned_url
 
 
-
 def extract_asin(url):
     """Извлекает ASIN из URL Amazon с поддержкой различных форматов."""
     patterns = [
@@ -563,7 +654,6 @@ def extract_bsr(product_data, locale):
     else:
         logging.warning("Ранг не найден в данных sales_rank.")
         return 'Not Found'
-
 
 
 def scrape_amazon_product(url, oxylabs_username, oxylabs_password, tz):
@@ -724,7 +814,6 @@ def handle_quota_exceeded():
     logging.warning("Превышена квота на запись. Ожидание восстановления квоты...")
     time.sleep(300)  # Ожидание 5 минут перед повторной попыткой
 
-
 def update_google_sheets(data, client, tz):
     MAX_COLUMNS = 18278
     max_retries = 5
@@ -806,13 +895,13 @@ def update_google_sheets(data, client, tz):
             parameters = [
                 ("Rating", product.get('Rating', 'N/A')),
                 ("Number of Reviews", product.get('Number of Reviews', 'N/A')),
-                 ("5", product.get('five_star', {}).get('Reviews with text', '0')),
+                ("5", product.get('five_star', {}).get('Reviews with text', '0')),
                 ("4", product.get('four_star', {}).get('Reviews with text', '0')),
-                 ("3", product.get('three_star', {}).get('Reviews with text', '0')),
+                ("3", product.get('three_star', {}).get('Reviews with text', '0')),
                 ("2", product.get('two_star', {}).get('Reviews with text', '0')),
                 ("1", product.get('one_star', {}).get('Reviews with text', '0'))
             ]
-            
+
             if asin in existing_asins:
                 # Обновляем существующие строки
                 asin_info = existing_asins[asin]
@@ -876,6 +965,9 @@ def update_google_sheets(data, client, tz):
         if rating_cells:
             batch_format_cells(structured_sheet, rating_cells)
 
+        # Вызываем функцию для обновления и форматирования 1-звёздочных отзывов
+        update_and_format_1_star_reviews(structured_sheet, datetime.now(tz))
+
         logging.info(f"Обновление завершено. Обработано продуктов: {len(data)}")
 
     except gspread.exceptions.APIError as e:
@@ -887,9 +979,6 @@ def update_google_sheets(data, client, tz):
     except Exception as e:
         logging.error(f"Неожиданная ошибка: {e}")
         raise
-
-
-
 
 
 MAX_MESSAGE_LENGTH = 4096
@@ -1103,3 +1192,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
